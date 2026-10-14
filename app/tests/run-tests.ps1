@@ -23,9 +23,10 @@ function Section([string]$Name) { Write-Host "`n== $Name" -ForegroundColor Cyan 
 # Gercek ayarlar ve log dosyasi kirletilmez: gecici dosyalar kullanilir.
 $env:ATK_SETTINGS    = Join-Path $env:TEMP "atk-sarj-test-$PID.json"
 $env:ATK_STARTUP_DIR = Join-Path $env:TEMP "atk-sarj-test-startup-$PID"   # gercek Baslangic klasoru yerine
+$env:ATK_DESKTOP_DIR = Join-Path $env:TEMP "atk-sarj-test-desktop-$PID"   # gercek masaustu yerine
 $env:ATK_MUTEX       = "Global\ATK_Charge_Animation_Test_$PID"           # calisan gercek izleyiciden bagimsiz
 $env:ATK_TEST        = '1'                                               # kontrol merkezi sisteme dokunmasin
-New-Item -ItemType Directory -Force $env:ATK_STARTUP_DIR | Out-Null
+New-Item -ItemType Directory -Force $env:ATK_STARTUP_DIR, $env:ATK_DESKTOP_DIR | Out-Null
 . (Join-Path $Root 'atk-sarj.ps1')
 $LogPath = Join-Path $env:TEMP "atk-sarj-test-$PID.log"
 Set-AppSettings @{}   # varsayilan ayarlar (kullanicinin temasi / dili testleri etkilemesin)
@@ -107,18 +108,25 @@ Test 'metinler.json gecerli UTF-8 JSON, Turkce karakterler dogru' {
     AssertEq $Texts.tr.charging ([string][char]0x15E + 'arj oluyor') 'tr metin'
     AssertEq $Texts.tr.theme_gold ('Alt' + [char]0x131 + 'n') 'tr tema adi'
 }
-Test '.vbs dosyalari CRLF satir sonu kullaniyor (ana klasordeki baslatici dahil)' {
-    $files = @(Get-ChildItem $Root -Include *.bat, *.vbs -Recurse) + @(Get-ChildItem (Split-Path $Root -Parent) -Filter *.vbs)
-    Assert ($files.Count -ge 2) "vbs dosyasi bulunamadi"
-    foreach ($f in $files) {
-        $txt = [IO.File]::ReadAllText($f.FullName)
-        $lf = ([regex]::Matches($txt, "(?<!`r)`n")).Count
-        AssertEq $lf 0 "$($f.Name) yalniz-LF satir"
-    }
-}
-Test 'Ana klasorde yalnizca baslatici, README, LICENSE ve app klasoru var' {
+Test 'Ana klasorde yalnizca uygulama, README, LICENSE ve app klasoru var (VBScript yok)' {
     $top = @(Get-ChildItem (Split-Path $Root -Parent) -Force | Where-Object { $_.Name -notin '.git', '.gitignore', '.gitattributes' } | ForEach-Object Name | Sort-Object)
-    AssertEq ($top -join ', ') 'app, ATK Charge Animation.vbs, LICENSE, README.md' 'ana klasor icerigi'
+    AssertEq ($top -join ', ') 'app, ATK Charge Animation.exe, LICENSE, README.md' 'ana klasor icerigi'
+    AssertEq @(Get-ChildItem (Split-Path $Root -Parent) -Recurse -Include *.vbs, *.bat -Force).Count 0 'vbs / bat kalmamali'
+}
+Test 'Indirilen ZIP''te yalnizca uygulama ve app klasoru (README, testler, araclar, gorseller haric)' {
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if (-not $git) { throw 'git bulunamadi' }
+    Push-Location (Split-Path $Root -Parent)
+    try {
+        $attr = @{}
+        git check-attr export-ignore -- README.md LICENSE .gitignore .gitattributes app/docs app/tests app/tools 'ATK Charge Animation.exe' app/atk-sarj.ps1 app/LICENSE.txt |
+            ForEach-Object { $p = $_ -split ': '; $attr[$p[0]] = $p[2] }
+        foreach ($p in 'README.md', 'LICENSE', '.gitignore', '.gitattributes', 'app/docs', 'app/tests', 'app/tools') { AssertEq $attr[$p] 'set' "$p ZIP'e girmemeli" }
+        foreach ($p in 'ATK Charge Animation.exe', 'app/atk-sarj.ps1', 'app/LICENSE.txt') { AssertEq $attr[$p] 'unspecified' "$p ZIP'te olmali" }
+    } finally { Pop-Location }
+}
+Test 'Lisans kopyasi (app\LICENSE.txt) asil lisansla ayni' {
+    AssertEq (Get-FileHash (Join-Path $Root 'LICENSE.txt')).Hash (Get-FileHash (Join-Path (Split-Path $Root -Parent) 'LICENSE')).Hash 'lisans kopyasi'
 }
 Test 'Animasyon XAML: yer tutucular doluyor, adlar mevcut, odak calmaz, en ustte' {
     $text = Expand-Template ([IO.File]::ReadAllText($XamlPath, [Text.Encoding]::UTF8)) @{ A1 = $Theme.A1; A2 = $Theme.A2; A1L = $Theme.A1L }
@@ -703,22 +711,36 @@ else {
     Write-Host "         (ATK HUB calisiyor mu / running: $hubRunning)" -ForegroundColor DarkGray
     foreach ($dev in @($hwWired + $hwRx)) {
         $kind = if ($dev.Receiver) { 'alici / receiver' } else { 'kablo / wired' }
+        # 10 okuma. Kablo her zaman cevap vermeli; alicida mouse uykudaysa cevap gelmeyebilir (program bunu yok sayar)
         $reads = New-Object Collections.ArrayList
-        Test "[$kind] 10 ardisik okuma: hepsi basarili, her biri 1 sn altinda" {
-            for ($i = 0; $i -lt 10; $i++) {
-                $sw = [Diagnostics.Stopwatch]::StartNew()
-                $b = [AtkHid]::ReadBattery($dev.Id, 1000)
-                $sw.Stop()
-                Assert ($null -ne $b) "okuma $i basarisiz"
-                Assert ($sw.ElapsedMilliseconds -lt 1000) "okuma $i yavas: $($sw.ElapsedMilliseconds) ms"
-                [void]$reads.Add([pscustomobject]@{ Level = $b.Level; Charge = $b.Charge; mV = $b.VoltageMv; ms = $sw.ElapsedMilliseconds; Raw = $b.Raw; ChecksumOk = $b.ChecksumOk })
-                Start-Sleep -Milliseconds 100
-            }
+        $misses = 0
+        for ($i = 0; $i -lt 10; $i++) {
+            $sw = [Diagnostics.Stopwatch]::StartNew()
+            $b = [AtkHid]::ReadBattery($dev.Id, 1000)
+            $sw.Stop()
+            if ($b) { [void]$reads.Add([pscustomobject]@{ Level = $b.Level; Charge = $b.Charge; mV = $b.VoltageMv; ms = $sw.ElapsedMilliseconds; Raw = $b.Raw; ChecksumOk = $b.ChecksumOk }) }
+            else { $misses++ }
+            Start-Sleep -Milliseconds 100
         }
+        Write-Host ("         [{0}] basarili okuma / successful reads: {1}/10" -f $kind, $reads.Count) -ForegroundColor DarkGray
         if ($reads.Count) {
             $first = $reads[0]
             Write-Host ("         ilk yanit / first response: {0}" -f $first.Raw) -ForegroundColor DarkGray
             Write-Host ("         %{0}, durum/charge {1}, {2} mV, ort. {3:N0} ms" -f $first.Level, $first.Charge, $first.mV, ($reads | Measure-Object ms -Average).Average) -ForegroundColor DarkGray
+        }
+        if ($dev.Receiver -and -not $reads.Count) {
+            Skip "[$kind] okuma testleri" 'mouse cevap vermedi, uykuda olabilir; mouse''u oynatip tekrar deneyin / mouse asleep?'
+            continue
+        }
+        if ($dev.Receiver) {
+            Test "[$kind] Mouse cevap verdiginde okuma 1 sn altinda" {
+                foreach ($r in $reads) { Assert ($r.ms -lt 1000) "yavas: $($r.ms) ms" }
+            }
+        } else {
+            Test "[$kind] 10 ardisik okumanin hepsi basarili, her biri 1 sn altinda" {
+                AssertEq $misses 0 'basarisiz okuma'
+                foreach ($r in $reads) { Assert ($r.ms -lt 1000) "yavas: $($r.ms) ms" }
+            }
         }
         Test "[$kind] Okumalar tutarli (seviye farki en fazla 1, durum ayni)" {
             $lv = $reads | Measure-Object Level -Minimum -Maximum
@@ -741,10 +763,11 @@ else {
             }
         }
     }
-    Test 'Arka plan okumasi (ReadBatteryAsync) 3 sn icinde sonuc verir' {
-        $task = [AtkHid]::ReadBatteryAsync(@($hwWired + $hwRx)[0].Id, 400, 6, 250)
-        Assert ($task.Wait(3000)) 'zaman asimi'
-        Assert ($null -ne $task.Result) 'sonuc null'
+    Test 'Arka plan okumasi (ReadBatteryAsync) takilmadan 4 sn icinde biter (kabloda sonuc verir)' {
+        $target = @($hwWired + $hwRx)[0]
+        $task = [AtkHid]::ReadBatteryAsync($target.Id, 400, 6, 250)
+        Assert ($task.Wait(4000)) 'zaman asimi'
+        if (-not $target.Receiver) { Assert ($null -ne $task.Result) 'sonuc null' }
     }
     Test 'Olmayan cihazda okuma hatasiz null doner' {
         Assert ($null -eq [AtkHid]::ReadBattery('vid_373b&pid_ffff', 300)) 'null olmali'
@@ -761,17 +784,36 @@ Test 'Izleyici durumu tek-kopya kilidinden okunur' {
     finally { $held.ReleaseMutex(); $held.Dispose() }
     AssertEq (Test-WatcherRunning) $false 'kilit birakilinca'
 }
-Test 'Otomatik baslatma: kisayol olusur, app\baslat.vbs''i gosterir, eski adli kisayol temizlenir, kapatilinca silinir' {
+Test 'Otomatik baslatma: kisayol uygulamayi --watcher ile acar, eski adli kisayol temizlenir, kapatilinca silinir' {
     $legacy = Join-Path $StartupDir $LegacyShortcutNames[0]
     Set-Content -Path $legacy -Value 'eski'
     Set-Autostart $true
     AssertEq (Test-Autostart) $true 'acik'
     Assert (-not (Test-Path $legacy)) 'eski kisayol silinmeli'
     $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $StartupDir $ShortcutName))
-    Assert ($lnk.TargetPath.ToLowerInvariant().EndsWith('wscript.exe')) "hedef: $($lnk.TargetPath)"
-    Assert ($lnk.Arguments.Contains((Join-Path $Root 'baslat.vbs'))) "arguman: $($lnk.Arguments)"
+    AssertEq $lnk.TargetPath $ExePath 'hedef'
+    AssertEq $lnk.Arguments '--watcher' 'arguman'
     Set-Autostart $false
     AssertEq (Test-Autostart) $false 'kapali'
+}
+Test 'Masaustu kisayolu: uygulamayi (kontrol merkezi) acar, simgeli; kaldirilinca silinir' {
+    Set-DesktopShortcut $true
+    AssertEq (Test-DesktopShortcut) $true 'olustu'
+    $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $DesktopDir $ShortcutName))
+    AssertEq $lnk.TargetPath $ExePath 'hedef'; AssertEq $lnk.Arguments '' 'arguman'
+    Assert ($lnk.IconLocation.StartsWith($ExePath)) "simge: $($lnk.IconLocation)"
+    Set-DesktopShortcut $false
+    AssertEq (Test-DesktopShortcut) $false 'silindi'
+}
+Test 'app klasoru gizlenir ve geri gorunur yapilir' {
+    $dir = Get-Item -LiteralPath $AppDir -Force
+    $wasHidden = [bool]($dir.Attributes -band [IO.FileAttributes]::Hidden)
+    try {
+        Set-AppFolderHidden $true
+        Assert ((Get-Item -LiteralPath $AppDir -Force).Attributes -band [IO.FileAttributes]::Hidden) 'gizlenmeli'
+        Set-AppFolderHidden $false
+        Assert (-not ((Get-Item -LiteralPath $AppDir -Force).Attributes -band [IO.FileAttributes]::Hidden)) 'gorunmeli'
+    } finally { Set-AppFolderHidden $wasHidden }
 }
 Test 'Indirilen dosya engeli (Zone.Identifier) kaldirilir' {
     $probe = Join-Path $Root "tests\unblock-probe-$PID.tmp"
@@ -797,16 +839,47 @@ Test 'Ikinci kopya acilmaz (tek kopya kilidi)' {
         Assert $exited 'ikinci kopya kapanmadi'
     } finally { if ($ownedHere) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
 }
-Test 'Baslaticilar: ana klasordeki tek dosya kontrol merkezini, app\baslat.vbs izleyiciyi gizli acar' {
-    $vbs = Get-Content (Join-Path $Root 'baslat.vbs') -Raw
-    Assert ($vbs.Contains('atk-sarj.ps1') -and $vbs.Contains('ayarlar.ps1')) 'baslat.vbs iki modu da desteklemeli'
-    Assert ($vbs.Contains('WindowStyle Hidden')) 'gizli calismiyor'
-    $main = Get-Content (Join-Path (Split-Path $Root -Parent) 'ATK Charge Animation.vbs') -Raw
-    Assert ($main.Contains('\app\baslat.vbs') -and $main.Contains('ayarlar')) 'ana baslatici kontrol merkezini acmiyor'
+Test 'Uygulama dosyasi: surum bilgisi ve simge gomulu' {
+    Assert (Test-Path $ExePath) 'ATK Charge Animation.exe yok'
+    $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($ExePath)
+    AssertEq $info.ProductName 'ATK Charge Animation' 'urun adi'
+    Assert ($info.LegalCopyright.Contains('salihjrx')) "telif: $($info.LegalCopyright)"
+    Add-Type -AssemblyName System.Drawing
+    $icon = [Drawing.Icon]::ExtractAssociatedIcon($ExePath)
+    Assert ($icon.Width -gt 0) 'simge okunamadi'
+}
+Test 'Uygulama --watcher: betigi kendi surecinde calistirir (ikinci kopya hemen cikar, hata kaydi yok)' {
+    $held = New-Object Threading.Mutex($true, $MutexName)   # izleyici calisiyormus gibi
+    $crashLog = Join-Path $Root 'hata-log.txt'
+    $before = if (Test-Path $crashLog) { (Get-Item $crashLog).Length } else { 0 }
+    try {
+        $p = Start-Process -FilePath $ExePath -ArgumentList '--watcher' -PassThru
+        $exited = $p.WaitForExit(20000)
+        if (-not $exited) { $p.Kill() }
+        Assert $exited 'cikmadi'
+        AssertEq $p.ExitCode 0 'cikis kodu'
+        $after = if (Test-Path $crashLog) { (Get-Item $crashLog).Length } else { 0 }
+        AssertEq $after $before 'hata-log.txt yazilmamali'
+    } finally { $held.ReleaseMutex(); $held.Dispose() }
+}
+if ($SkipUI) { Skip 'Uygulama kontrol merkezini aciyor' '-SkipUI' }
+else {
+    Test 'Uygulama (argumansiz) kontrol merkezi penceresini acar' {
+        $p = Start-Process -FilePath $ExePath -PassThru   # ATK_TEST ortam degiskeni sayesinde sisteme dokunmaz
+        try {
+            $title = $null; $sw = [Diagnostics.Stopwatch]::StartNew()
+            while ($sw.Elapsed.TotalSeconds -lt 25 -and -not $title) {
+                Start-Sleep -Milliseconds 500; $p.Refresh()
+                if ($p.HasExited) { throw "uygulama kapandi (kod $($p.ExitCode))" }
+                if ($p.MainWindowHandle -ne [IntPtr]::Zero) { $title = $p.MainWindowTitle }
+            }
+            AssertEq $title $Txt.settingsTitle 'pencere basligi'
+        } finally { if (-not $p.HasExited) { $p.Kill() } }
+    }
 }
 
 Remove-Item $LogPath -ErrorAction SilentlyContinue
-Remove-Item $env:ATK_STARTUP_DIR -Recurse -ErrorAction SilentlyContinue
+Remove-Item $env:ATK_STARTUP_DIR, $env:ATK_DESKTOP_DIR -Recurse -ErrorAction SilentlyContinue
 
 # =====================================================================
 Write-Host ''

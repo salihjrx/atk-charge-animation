@@ -4,7 +4,7 @@
   - Kablosuz kullanirken pil %20 / %10 / %5'e dusunce sag altta kirmizi uyari balonu gosterir.
   - Kabloda sarj olurken %100'e ulasinca tema renginde "sarj tamamlandi" bildirimi gosterir.
   Pil, ATK HUB ile ayni HID protokoluyle mouse'tan okunur (bkz. AtkHid.cs); ATK HUB gerekmez. Desteklenen cihazlar: cihazlar.csv
-  Kullanici her seyi kontrol merkezinden yapar: ..\ATK Charge Animation.vbs -> ayarlar.ps1 (ayarlar.json). Metinler: metinler.json
+  Kullanici her seyi kontrol merkezinden yapar: ..\ATK Charge Animation.exe -> ayarlar.ps1 (ayarlar.json). Metinler: metinler.json
 
   Kullanim:
     atk-sarj.ps1               -> arka planda takip eder
@@ -33,6 +33,8 @@ $DevicePath   = Join-Path $PSScriptRoot 'cihazlar.csv'
 $TextsPath    = Join-Path $PSScriptRoot 'metinler.json'
 $LogPath      = Join-Path $PSScriptRoot 'cihaz-log.txt'
 $AppDir       = $PSScriptRoot
+$ExePath      = Join-Path (Split-Path $PSScriptRoot -Parent) 'ATK Charge Animation.exe'   # tek giris noktasi
+$DesktopDir   = if ($env:ATK_DESKTOP_DIR) { $env:ATK_DESKTOP_DIR } else { [Environment]::GetFolderPath('Desktop') }
 # Testler gercek ayarlara, Baslangic klasorune ve calisan izleyiciye dokunmasin diye ortam degiskenleriyle degistirilebilir
 $SettingsPath = if ($env:ATK_SETTINGS)    { $env:ATK_SETTINGS }    else { Join-Path $PSScriptRoot 'ayarlar.json' }
 $StartupDir   = if ($env:ATK_STARTUP_DIR) { $env:ATK_STARTUP_DIR } else { [Environment]::GetFolderPath('Startup') }
@@ -61,6 +63,7 @@ $DefaultSettings = [ordered]@{
     fullNotify   = $true       # sarj dolunca bildirim
     lowWarn      = $true       # kablosuzken dusuk pil uyarisi
     clickToClose = $true       # animasyona / balona tiklayinca hemen kapansin
+    setupVersion = 0           # tek seferlik kurulum adimlarinin surumu (kontrol merkezi yonetir)
 }
 
 # --- Yardimcilar ------------------------------------------------------------
@@ -430,7 +433,7 @@ function Invoke-BatteryMonitor {
     $monitor.WiredLastLevel = $null; $monitor.FullNotified = $false   # kablo cikti
     if (-not $present -or -not $LowWarn) { return }
     $monitor.Device = $present[0]
-    $monitor.Task = & $BatteryReader $present[0].Id 2
+    $monitor.Task = & $BatteryReader $present[0].Id 3   # mouse bostayken alici her sorguya cevap alamayabilir
 }
 
 # ---------------------------------------------------------------------------
@@ -478,42 +481,69 @@ function Test-WatcherRunning {
     return $false
 }
 
-# Izleyiciyi konsol penceresi olmadan baslatir
+# Izleyiciyi konsol penceresi olmadan baslatir (uygulama yoksa, gelistirme icin dogrudan PowerShell)
 function Start-Watcher {
-    Start-Process -FilePath 'wscript.exe' -ArgumentList ('"{0}"' -f (Join-Path $AppDir 'baslat.vbs'))
+    if (Test-Path -LiteralPath $ExePath) { Start-Process -FilePath $ExePath -ArgumentList '--watcher' }
+    else {
+        Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', ('"{0}"' -f (Join-Path $AppDir 'atk-sarj.ps1'))
+    }
 }
 
-# Bu klasordeki izleyiciyi durdurur; kapanmasini en fazla 5 sn bekler
+# Bu klasordeki izleyiciyi durdurur (uygulama --watcher ya da dogrudan PowerShell); en fazla 5 sn bekler
 function Stop-Watcher {
     $watcherScript = (Join-Path $AppDir 'atk-sarj.ps1').ToLowerInvariant()
-    Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
-        Where-Object { $_.CommandLine -and $_.CommandLine.ToLowerInvariant().Contains($watcherScript) -and $_.ProcessId -ne $PID } |
+    $exe = $ExePath.ToLowerInvariant()
+    Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='ATK Charge Animation.exe'" |
+        Where-Object {
+            $cmd = "$($_.CommandLine)".ToLowerInvariant()
+            $_.ProcessId -ne $PID -and ($cmd.Contains($watcherScript) -or ($cmd.Contains($exe) -and $cmd.Contains('--watcher')))
+        } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     $deadline = (Get-Date).AddSeconds(5)
     while ((Test-WatcherRunning) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
 }
 
-# Windows acilisinda otomatik baslatma (Baslangic klasorundeki kisayol)
+# Uygulamayi gosteren bir kisayol yazar (her seferinde yeniden: klasor tasindiysa yeni yeri gostersin)
+function Write-AppShortcut([string]$ShortcutPath, [string]$Arguments) {
+    $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut($ShortcutPath)
+    $lnk.TargetPath = $ExePath
+    $lnk.Arguments = $Arguments
+    $lnk.WorkingDirectory = Split-Path $ExePath -Parent
+    $lnk.IconLocation = "$ExePath,0"
+    $lnk.Description = 'ATK Charge Animation'
+    $lnk.Save()
+}
+
+# Windows acilisinda otomatik baslatma (Baslangic klasorundeki kisayol -> uygulama --watcher)
 function Test-Autostart { return (Test-Path -LiteralPath (Join-Path $StartupDir $ShortcutName)) }
 
 function Set-Autostart([bool]$Enabled) {
     foreach ($old in $LegacyShortcutNames) { Remove-Item -LiteralPath (Join-Path $StartupDir $old) -ErrorAction SilentlyContinue }
     $lnkPath = Join-Path $StartupDir $ShortcutName
-    if (-not $Enabled) { Remove-Item -LiteralPath $lnkPath -ErrorAction SilentlyContinue; return }
-    # Her seferinde yeniden yazilir: klasor tasindiysa kisayol yeni yeri gosterir
-    $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut($lnkPath)
-    $lnk.TargetPath = Join-Path $env:WINDIR 'System32\wscript.exe'
-    $lnk.Arguments = '"{0}"' -f (Join-Path $AppDir 'baslat.vbs')
-    $lnk.WorkingDirectory = $AppDir
-    $lnk.Description = 'ATK Charge Animation'
-    $lnk.Save()
+    if ($Enabled) { Write-AppShortcut $lnkPath '--watcher' }
+    else { Remove-Item -LiteralPath $lnkPath -ErrorAction SilentlyContinue }
+}
+
+# Masaustu kisayolu (kontrol merkezini acar)
+function Test-DesktopShortcut { return (Test-Path -LiteralPath (Join-Path $DesktopDir $ShortcutName)) }
+
+function Set-DesktopShortcut([bool]$Enabled) {
+    $lnkPath = Join-Path $DesktopDir $ShortcutName
+    if ($Enabled) { Write-AppShortcut $lnkPath '' }
+    else { Remove-Item -LiteralPath $lnkPath -ErrorAction SilentlyContinue }
+}
+
+# app klasorunu gizler: kullanici klasorde yalnizca uygulamayi gorur
+function Set-AppFolderHidden([bool]$Hidden) {
+    $dir = Get-Item -LiteralPath $AppDir -Force
+    if ($Hidden) { $dir.Attributes = $dir.Attributes -bor [IO.FileAttributes]::Hidden }
+    else { $dir.Attributes = $dir.Attributes -band (-bnot [IO.FileAttributes]::Hidden) }
 }
 
 # Internetten indirilen dosyalardaki Windows engelini (Zone.Identifier) kaldirir
 function Unblock-AppFiles {
-    $root = Split-Path $AppDir -Parent
-    Get-ChildItem -LiteralPath $AppDir -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
-    Get-ChildItem -LiteralPath $root -File -Filter '*.vbs' -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
+    Get-ChildItem -LiteralPath $AppDir -Recurse -File -Force -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $ExePath) { Unblock-File -LiteralPath $ExePath -ErrorAction SilentlyContinue }
 }
 
 if ($MyInvocation.InvocationName -eq '.') { return }   # dot-source edilirse sadece fonksiyonlari yukle

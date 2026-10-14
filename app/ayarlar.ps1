@@ -1,5 +1,5 @@
 <#
-  Kontrol merkezi (programin tek giris noktasi: ..\ATK Charge Animation.vbs).
+  Kontrol merkezi (programin tek giris noktasi: ..\ATK Charge Animation.exe).
   Arka plan izleyicisini baslatir / durdurur, Windows acilisinda baslatmayi yonetir;
   renk temasi, bildirimler, dil. Ayarlar hemen ayarlar.json'a kaydedilir ve izleyici 1 sn icinde uygular.
 #>
@@ -9,16 +9,23 @@ $ErrorActionPreference = 'Stop'
 $SettingsXamlPath = Join-Path $PSScriptRoot 'ayarlar.xaml'
 $TestMode = [bool]$env:ATK_TEST   # testlerde gercek sisteme (Baslangic, calisan izleyici) dokunulmaz
 
-# Ilk acilista: otomatik baslatmayi ac ve izleyiciyi baslat. Sonraki acilislarda kullanicinin secimine dokunulmaz.
+# Kurulum. Ilk acilista otomatik baslatma acilir ve izleyici baslar; kullanicinin sonraki secimlerine dokunulmaz.
+# setupVersion: tek seferlik adimlar (masaustu kisayolu, app klasorunu gizleme) eski surumden gelenlere de bir kez uygulanir.
+$SetupVersion = 2
 $firstRun = -not (Test-Path $SettingsPath)
 if (-not $TestMode) {
     Unblock-AppFiles   # ZIP'ten cikan dosyalardaki "internetten indirildi" engeli
-    if ($firstRun) {
+    # Var olan kisayollar uygulamayi gostersin (klasor tasindiysa ya da eski surumden kaldiysa)
+    if (Test-Autostart) { Set-Autostart $true }
+    if (Test-DesktopShortcut) { Set-DesktopShortcut $true }
+    if ([int]$AppSettings.setupVersion -lt $SetupVersion) {
+        if ($firstRun) { Set-Autostart $true }
+        Set-DesktopShortcut $true
+        Set-AppFolderHidden $true
+        $AppSettings['setupVersion'] = $SetupVersion
         Save-Settings
-        Set-Autostart $true
-        if (-not (Test-WatcherRunning)) { Start-Watcher }
+        if ((Test-Autostart) -and -not (Test-WatcherRunning)) { Start-Watcher }   # ilk acilis ya da eski surumden guncelleme
     }
-    elseif (Test-Autostart) { Set-Autostart $true }   # klasor tasindiysa kisayol yeni yeri gostersin
 }
 
 # {{t:anahtar}} -> metin (XML icin kacisli), {{A1}} / {{A2}} -> tema renkleri
@@ -163,7 +170,10 @@ $autoBox.Add_Click({ Set-Autostart ([bool]$this.IsChecked); $this.IsChecked = Te
     $answer = [Windows.MessageBox]::Show($win, $Txt.uninstallConfirm, $Txt.settingsTitle, 'YesNo', 'Question')
     if ($answer -ne 'Yes') { return }
     Set-Autostart $false
+    Set-DesktopShortcut $false
     Stop-Watcher
+    Set-AppFolderHidden $false   # silinecek klasorun tamami gorunsun
+    Remove-Item -LiteralPath $SettingsPath -ErrorAction SilentlyContinue   # tekrar acilirsa ilk kurulum gibi davransin
     [void][Windows.MessageBox]::Show($win, $Txt.uninstallDone, $Txt.settingsTitle, 'OK', 'Information')
     Start-Process explorer.exe -ArgumentList ('"{0}"' -f (Split-Path $AppDir -Parent))   # silinecek klasoru goster
     $win.Close()

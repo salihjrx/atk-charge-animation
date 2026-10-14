@@ -35,19 +35,14 @@ ATK mouse'unuzu USB-C kabloyla şarja taktığınızda ekranda şık bir şarj a
 
 ### Kurulum
 
-1. Bu repoyu indirin (**Code → Download ZIP**) ve istediğiniz bir klasöre çıkarın.
-2. **`ATK Charge Animation.vbs`** dosyasına çift tıklayın. Hepsi bu.
+1. Bu sayfadan **Code → Download ZIP** ile indirin ve istediğiniz bir klasöre çıkarın.
+2. **ATK Charge Animation** uygulamasına çift tıklayın. Hepsi bu.
 
-İlk açılışta program arka planda çalışmaya başlar ve Windows açılınca otomatik başlamak üzere ayarlanır; kontrol merkezi açılır. Windows ilk seferde "Yayımcı doğrulanamadı" uyarısı gösterirse **Çalıştır**'a basın (program indirilen dosyalardaki bu engeli kendisi kaldırır, bir daha sormaz).
+İlk açılışta program arka planda çalışmaya başlar, Windows açılınca otomatik başlamak üzere ayarlanır ve **masaüstüne bir kısayol** koyar; kontrol merkezi açılır. Program dosyalarının durduğu `app` klasörü gizlenir, klasörde yalnızca uygulama görünür.
+
+> Uygulama imzalı olmadığı için Windows ilk seferde "Windows kişisel bilgisayarınızı korudu" diyebilir: **Ek bilgi → Yine de çalıştır**'a basın. Bir daha sormaz.
 
 Kaldırmak için kontrol merkezinde **Programı kaldır**'a basın, ardından klasörü silin.
-
-```
-ATK Charge Animation/
-├── ATK Charge Animation.vbs   ← çalıştırılacak tek dosya
-├── README.md, LICENSE
-└── app/                       ← programın geri kalanı
-```
 
 ### Desteklenen mouse'lar
 
@@ -87,10 +82,12 @@ A small Windows tool that shows a polished charging animation when you plug your
 
 ### Install
 
-1. Download this repo (**Code → Download ZIP**) and extract it anywhere.
-2. Double-click **`ATK Charge Animation.vbs`**. That's it.
+1. Download it with **Code → Download ZIP** on this page and extract it anywhere.
+2. Double-click the **ATK Charge Animation** application. That's it.
 
-On first launch it starts running in the background, sets itself to start with Windows, and opens the control center. If Windows shows a "publisher could not be verified" prompt the first time, click **Run** (the program then removes the download block from its files, so it won't ask again).
+On first launch it starts running in the background, sets itself to start with Windows, puts **a shortcut on your desktop** and opens the control center. The `app` folder holding the program files is hidden, so the folder shows only the application.
+
+> The application is not code-signed, so Windows may show "Windows protected your PC" the first time: click **More info → Run anyway**. It won't ask again.
 
 To uninstall, click **Uninstall** in the control center, then delete the folder.
 
@@ -121,9 +118,9 @@ Example response from a real mouse while charging: `08 04 00 00 00 02 41 01 0F 9
 
 | File (`app/`) | |
 |---|---|
+| `../ATK Charge Animation.exe` | Launcher: runs the scripts below inside its own process (no console window); `--watcher` starts the background watcher. Source: `tools/AtkLauncher.cs`, built with `tools/build-launcher.ps1` using the C# compiler that ships with Windows |
 | `ayarlar.ps1`, `ayarlar.xaml` | Control center (settings saved to `ayarlar.json`) |
-| `atk-sarj.ps1` | Background watcher, charging animation, notifications, autostart / service helpers |
-| `baslat.vbs` | Starts the watcher or the control center without a console window |
+| `atk-sarj.ps1` | Background watcher, charging animation, notifications, autostart / desktop shortcut / service helpers |
 | `AtkHid.cs` | HID battery reader and USB plug watcher (compiled at runtime by `Add-Type`) |
 | `animasyon.xaml`, `bildirim.xaml` | WPF designs (theme colors filled in at runtime) |
 | `metinler.json` | Turkish / English texts |
@@ -136,7 +133,7 @@ Example response from a real mouse while charging: `08 04 00 00 00 02 41 01 0F 9
 powershell -NoProfile -STA -ExecutionPolicy Bypass -File app\tests\run-tests.ps1
 ```
 
-82 tests: protocol (byte-exact request, checksum vs. ATK HUB's formula for all 256 commands, response parsing, rejection of unrelated reports), device table and Turkish-culture regressions, themes and settings (save/load, corrupt file, live reload), plug detection (simulated `WM_DEVICECHANGE`), low-battery thresholds (hysteresis, sleeping mouse), fully-charged logic, animation (levels 0/15/20/21/50/60/100, live 55%→65% update, unreadable battery, themes, English), notifications (text, position, focus, click-to-close), the control center (driven programmatically: status, autostart, themes, options, language, custom colors), autostart shortcut and download-block removal, real hardware (wired and receiver: 10 consecutive reads, consistency, response checksums, plausible voltage) and single-instance. Use `-SkipHardware` without the mouse and `-SkipUI` to avoid windows popping up. Tests use a temporary settings file, startup folder and lock, so they never touch your installation.
+87 tests: protocol (byte-exact request, checksum vs. ATK HUB's formula for all 256 commands, response parsing, rejection of unrelated reports), device table and Turkish-culture regressions, themes and settings (save/load, corrupt file, live reload), plug detection (simulated `WM_DEVICECHANGE`), low-battery thresholds (hysteresis, sleeping mouse), fully-charged logic, animation (levels 0/15/20/21/50/60/100, live 55%→65% update, unreadable battery, themes, English), notifications (text, position, focus, click-to-close), the control center (driven programmatically: status, autostart, themes, options, language, custom colors), the launcher exe (version info, icon, watcher and control-center modes), autostart / desktop shortcuts, hidden app folder, what goes into the download ZIP, download-block removal, real hardware (wired and receiver: 10 consecutive reads, consistency, response checksums, plausible voltage) and single-instance. Use `-SkipHardware` without the mouse and `-SkipUI` to avoid windows popping up. Tests use a temporary settings file, startup and desktop folders and lock, so they never touch your installation. The download ZIP leaves out this README, the tests, tools and images (`export-ignore` in `.gitattributes`); a copy of the license ships as `app/LICENSE.txt`.
 
 ## Disclaimer / Yasal not
 
