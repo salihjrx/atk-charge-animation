@@ -1,0 +1,5 @@
+# cihaz kayitlari (seri numarasi icerir) / device log (contains serial numbers)
+cihaz-log.txt
+*.log
+# kullanicinin kendi ayarlari / user's own settings
+ayarlar.json

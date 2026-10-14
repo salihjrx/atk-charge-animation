@@ -1,0 +1,188 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Topmost="True" ShowInTaskbar="False" ShowActivated="False" ResizeMode="NoResize"
+        Width="460" Height="540" WindowStartupLocation="CenterScreen">
+
+  <Grid x:Name="Root" Opacity="0" RenderTransformOrigin="0.5,0.5">
+    <Grid.RenderTransform>
+      <ScaleTransform x:Name="RootScale" ScaleX="0.8" ScaleY="0.8"/>
+    </Grid.RenderTransform>
+
+    <Grid.Triggers>
+      <EventTrigger RoutedEvent="Loaded">
+        <BeginStoryboard>
+          <Storyboard>
+            <!-- giriş -->
+            <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.4"/>
+            <DoubleAnimation Storyboard.TargetName="RootScale" Storyboard.TargetProperty="ScaleX" From="0.8" To="1" Duration="0:0:0.7">
+              <DoubleAnimation.EasingFunction><BackEase EasingMode="EaseOut" Amplitude="0.45"/></DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+            <DoubleAnimation Storyboard.TargetName="RootScale" Storyboard.TargetProperty="ScaleY" From="0.8" To="1" Duration="0:0:0.7">
+              <DoubleAnimation.EasingFunction><BackEase EasingMode="EaseOut" Amplitude="0.45"/></DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+
+            <!-- yayılan halkalar -->
+            <DoubleAnimation Storyboard.TargetName="Ring1S" Storyboard.TargetProperty="ScaleX" From="1" To="1.5" Duration="0:0:2.4" RepeatBehavior="Forever"/>
+            <DoubleAnimation Storyboard.TargetName="Ring1S" Storyboard.TargetProperty="ScaleY" From="1" To="1.5" Duration="0:0:2.4" RepeatBehavior="Forever"/>
+            <DoubleAnimation Storyboard.TargetName="Ring1" Storyboard.TargetProperty="Opacity" From="0.8" To="0" Duration="0:0:2.4" RepeatBehavior="Forever"/>
+            <DoubleAnimation Storyboard.TargetName="Ring2S" Storyboard.TargetProperty="ScaleX" From="1" To="1.5" Duration="0:0:2.4" BeginTime="0:0:0.8" RepeatBehavior="Forever"/>
+            <DoubleAnimation Storyboard.TargetName="Ring2S" Storyboard.TargetProperty="ScaleY" From="1" To="1.5" Duration="0:0:2.4" BeginTime="0:0:0.8" RepeatBehavior="Forever"/>
+            <DoubleAnimation Storyboard.TargetName="Ring2" Storyboard.TargetProperty="Opacity" From="0.8" To="0" Duration="0:0:2.4" BeginTime="0:0:0.8" RepeatBehavior="Forever"/>
+            <DoubleAnimation Storyboard.TargetName="Ring3S" Storyboard.TargetProperty="ScaleX" From="1" To="1.5" Duration="0:0:2.4" BeginTime="0:0:1.6" RepeatBehavior="Forever"/>
+            <DoubleAnimation Storyboard.TargetName="Ring3S" Storyboard.TargetProperty="ScaleY" From="1" To="1.5" Duration="0:0:2.4" BeginTime="0:0:1.6" RepeatBehavior="Forever"/>
+            <DoubleAnimation Storyboard.TargetName="Ring3" Storyboard.TargetProperty="Opacity" From="0.8" To="0" Duration="0:0:2.4" BeginTime="0:0:1.6" RepeatBehavior="Forever"/>
+
+            <!-- dönen yay -->
+            <DoubleAnimation Storyboard.TargetName="ArcRot" Storyboard.TargetProperty="Angle" From="0" To="360" Duration="0:0:1.8" RepeatBehavior="Forever"/>
+
+            <!-- dalgalar (sıvı seviyesi koddan, gerçek pil yüzdesine göre) -->
+            <DoubleAnimation Storyboard.TargetName="WaveA" Storyboard.TargetProperty="X" From="0" To="-72" Duration="0:0:1.1" RepeatBehavior="Forever"/>
+            <DoubleAnimation Storyboard.TargetName="WaveB" Storyboard.TargetProperty="X" From="-72" To="0" Duration="0:0:1.7" RepeatBehavior="Forever"/>
+
+            <!-- kabarcıklar -->
+            <DoubleAnimation Storyboard.TargetName="Bub1" Storyboard.TargetProperty="(Canvas.Top)" From="128" To="20" Duration="0:0:1.9" RepeatBehavior="Forever"/>
+            <DoubleAnimation Storyboard.TargetName="Bub1" Storyboard.TargetProperty="Opacity" From="0.9" To="0" Duration="0:0:1.9" RepeatBehavior="Forever"/>
+            <DoubleAnimation Storyboard.TargetName="Bub2" Storyboard.TargetProperty="(Canvas.Top)" From="128" To="30" Duration="0:0:2.5" BeginTime="0:0:0.6" RepeatBehavior="Forever"/>
+            <DoubleAnimation Storyboard.TargetName="Bub2" Storyboard.TargetProperty="Opacity" From="0.9" To="0" Duration="0:0:2.5" BeginTime="0:0:0.6" RepeatBehavior="Forever"/>
+            <DoubleAnimation Storyboard.TargetName="Bub3" Storyboard.TargetProperty="(Canvas.Top)" From="128" To="10" Duration="0:0:2.1" BeginTime="0:0:1.2" RepeatBehavior="Forever"/>
+            <DoubleAnimation Storyboard.TargetName="Bub3" Storyboard.TargetProperty="Opacity" From="0.9" To="0" Duration="0:0:2.1" BeginTime="0:0:1.2" RepeatBehavior="Forever"/>
+
+            <!-- şimşek nabzı -->
+            <DoubleAnimation Storyboard.TargetName="BoltS" Storyboard.TargetProperty="ScaleX" From="1" To="1.1" Duration="0:0:0.6" AutoReverse="True" RepeatBehavior="Forever"/>
+            <DoubleAnimation Storyboard.TargetName="BoltS" Storyboard.TargetProperty="ScaleY" From="1" To="1.1" Duration="0:0:0.6" AutoReverse="True" RepeatBehavior="Forever"/>
+            <DoubleAnimation Storyboard.TargetName="BoltGlow" Storyboard.TargetProperty="BlurRadius" From="8" To="26" Duration="0:0:0.6" AutoReverse="True" RepeatBehavior="Forever"/>
+
+            <!-- durum noktası -->
+            <DoubleAnimation Storyboard.TargetName="Dot" Storyboard.TargetProperty="Opacity" From="1" To="0.25" Duration="0:0:0.7" AutoReverse="True" RepeatBehavior="Forever"/>
+          </Storyboard>
+        </BeginStoryboard>
+      </EventTrigger>
+    </Grid.Triggers>
+
+    <!-- kart -->
+    <Border Margin="30" CornerRadius="34" BorderThickness="1">
+      <Border.Background>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+          <GradientStop Color="#F2141B24" Offset="0"/>
+          <GradientStop Color="#F2090C11" Offset="1"/>
+        </LinearGradientBrush>
+      </Border.Background>
+      <Border.BorderBrush>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+          <GradientStop Color="#66{{A1}}" Offset="0"/>
+          <GradientStop Color="#1AFFFFFF" Offset="0.5"/>
+          <GradientStop Color="#66{{A2}}" Offset="1"/>
+        </LinearGradientBrush>
+      </Border.BorderBrush>
+      <Border.Effect>
+        <DropShadowEffect Color="#000000" BlurRadius="30" ShadowDepth="6" Opacity="0.6"/>
+      </Border.Effect>
+
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="320"/>
+          <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- görsel alan -->
+        <Grid Width="320" Height="320" VerticalAlignment="Center" HorizontalAlignment="Center">
+          <Ellipse x:Name="Ring1" Width="200" Height="200" Stroke="#{{A1}}" StrokeThickness="2" Opacity="0" RenderTransformOrigin="0.5,0.5">
+            <Ellipse.RenderTransform><ScaleTransform x:Name="Ring1S"/></Ellipse.RenderTransform>
+          </Ellipse>
+          <Ellipse x:Name="Ring2" Width="200" Height="200" Stroke="#{{A2}}" StrokeThickness="2" Opacity="0" RenderTransformOrigin="0.5,0.5">
+            <Ellipse.RenderTransform><ScaleTransform x:Name="Ring2S"/></Ellipse.RenderTransform>
+          </Ellipse>
+          <Ellipse x:Name="Ring3" Width="200" Height="200" Stroke="#{{A1}}" StrokeThickness="2" Opacity="0" RenderTransformOrigin="0.5,0.5">
+            <Ellipse.RenderTransform><ScaleTransform x:Name="Ring3S"/></Ellipse.RenderTransform>
+          </Ellipse>
+
+          <!-- disk -->
+          <Ellipse Width="212" Height="212">
+            <Ellipse.Fill>
+              <RadialGradientBrush GradientOrigin="0.5,0.35">
+                <GradientStop Color="#1E2A36" Offset="0"/>
+                <GradientStop Color="#0A0E13" Offset="1"/>
+              </RadialGradientBrush>
+            </Ellipse.Fill>
+            <Ellipse.Effect>
+              <DropShadowEffect Color="#{{A1}}" BlurRadius="45" ShadowDepth="0" Opacity="0.45"/>
+            </Ellipse.Effect>
+          </Ellipse>
+
+          <!-- iz + dönen yay -->
+          <Ellipse Width="236" Height="236" Stroke="#1FFFFFFF" StrokeThickness="3"/>
+          <Ellipse Width="236" Height="236" StrokeThickness="4" StrokeDashArray="42 140" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5">
+            <Ellipse.Stroke>
+              <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#{{A1}}" Offset="0"/>
+                <GradientStop Color="#{{A2}}" Offset="1"/>
+              </LinearGradientBrush>
+            </Ellipse.Stroke>
+            <Ellipse.RenderTransform><RotateTransform x:Name="ArcRot"/></Ellipse.RenderTransform>
+            <Ellipse.Effect>
+              <DropShadowEffect Color="#{{A1}}" BlurRadius="14" ShadowDepth="0" Opacity="0.9"/>
+            </Ellipse.Effect>
+          </Ellipse>
+
+          <!-- pil -->
+          <Grid Width="84" Height="160" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,8,0,0">
+            <Border Width="32" Height="10" CornerRadius="4,4,0,0" Background="#E6FFFFFF" VerticalAlignment="Top" HorizontalAlignment="Center"/>
+            <Border Width="84" Height="146" CornerRadius="16" BorderBrush="#E6FFFFFF" BorderThickness="4" VerticalAlignment="Bottom">
+              <!-- iç kısım 72x134 (4 kenar + 2 boşluk) -->
+              <Grid Width="68" Height="130" Margin="0" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Grid.Clip>
+                  <RectangleGeometry Rect="0,0,68,130" RadiusX="10" RadiusY="10"/>
+                </Grid.Clip>
+                <Canvas>
+                  <Canvas>
+                    <Canvas.RenderTransform><TranslateTransform x:Name="LiquidY" Y="124"/></Canvas.RenderTransform>
+                    <Path Opacity="0.45" Data="M0,6 Q18,-2 36,6 T72,6 T108,6 T144,6 T180,6 T216,6 L216,220 L0,220 Z">
+                      <Path.Fill><SolidColorBrush x:Name="WaveBBrush" Color="#{{A2}}"/></Path.Fill>
+                      <Path.RenderTransform><TranslateTransform x:Name="WaveB" X="-72"/></Path.RenderTransform>
+                    </Path>
+                    <Path Data="M0,10 Q18,2 36,10 T72,10 T108,10 T144,10 T180,10 T216,10 L216,220 L0,220 Z">
+                      <Path.Fill>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,140" MappingMode="Absolute">
+                          <GradientStop x:Name="LiqStop1" Color="#{{A1}}" Offset="0"/>
+                          <GradientStop x:Name="LiqStop2" Color="#{{A2}}" Offset="1"/>
+                        </LinearGradientBrush>
+                      </Path.Fill>
+                      <Path.RenderTransform><TranslateTransform x:Name="WaveA"/></Path.RenderTransform>
+                    </Path>
+                  </Canvas>
+                  <Ellipse x:Name="Bub1" Width="6" Height="6" Fill="#CCFFFFFF" Canvas.Left="14" Canvas.Top="140"/>
+                  <Ellipse x:Name="Bub2" Width="4" Height="4" Fill="#CCFFFFFF" Canvas.Left="44" Canvas.Top="140"/>
+                  <Ellipse x:Name="Bub3" Width="5" Height="5" Fill="#CCFFFFFF" Canvas.Left="30" Canvas.Top="140"/>
+                </Canvas>
+
+                <!-- şimşek -->
+                <Path Width="34" Height="56" Stretch="Uniform" Fill="White" HorizontalAlignment="Center" VerticalAlignment="Center"
+                      RenderTransformOrigin="0.5,0.5"
+                      Data="M14,0 L0,23 L10,23 L6,40 L22,14 L12,14 L18,0 Z">
+                  <Path.RenderTransform><ScaleTransform x:Name="BoltS"/></Path.RenderTransform>
+                  <Path.Effect><DropShadowEffect x:Name="BoltGlow" Color="White" BlurRadius="12" ShadowDepth="0" Opacity="1"/></Path.Effect>
+                </Path>
+              </Grid>
+            </Border>
+          </Grid>
+        </Grid>
+
+        <!-- yazılar -->
+        <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,4,0,0">
+          <TextBlock x:Name="TitleText" Text="A T K" FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold"
+                     Foreground="#8A97A6" HorizontalAlignment="Center" MaxWidth="360" TextTrimming="CharacterEllipsis"/>
+          <TextBlock x:Name="PctText" Text="&#x15E;arj oluyor" FontFamily="Segoe UI Variable Display, Segoe UI" FontSize="34" FontWeight="Bold"
+                     Foreground="White" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+          <Border CornerRadius="12" Background="#1A{{A1}}" BorderBrush="#40{{A1}}" BorderThickness="1"
+                  Padding="12,5" HorizontalAlignment="Center" Margin="0,12,0,0">
+            <StackPanel Orientation="Horizontal">
+              <Ellipse x:Name="Dot" Width="8" Height="8" Fill="#{{A1}}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+              <TextBlock x:Name="StatusText" Text="USB-C kablo ba&#x11F;land&#x131;" FontFamily="Segoe UI" FontSize="13" Foreground="#{{A1L}}" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>
