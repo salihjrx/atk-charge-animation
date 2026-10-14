@@ -3,8 +3,8 @@
   - Mouse USB kabloyla takildiginda ekranda sarj animasyonu gosterir (gercek pil yuzdesiyle).
   - Kablosuz kullanirken pil %20 / %10 / %5'e dusunce sag altta kirmizi uyari balonu gosterir.
   - Kabloda sarj olurken %100'e ulasinca tema renginde "sarj tamamlandi" bildirimi gosterir.
-  Pil, ATK HUB ile ayni HID protokoluyle mouse'tan okunur (bkz. AtkHid.cs). Desteklenen cihazlar: cihazlar.csv
-  Renk temasi ve secenekler: ayarlar.bat (ayarlar.json). Metinler: metinler.json
+  Pil, ATK HUB ile ayni HID protokoluyle mouse'tan okunur (bkz. AtkHid.cs); ATK HUB gerekmez. Desteklenen cihazlar: cihazlar.csv
+  Kullanici her seyi kontrol merkezinden yapar: ..\ATK Charge Animation.vbs -> ayarlar.ps1 (ayarlar.json). Metinler: metinler.json
 
   Kullanim:
     atk-sarj.ps1               -> arka planda takip eder
@@ -18,7 +18,7 @@ param([switch]$Test, [switch]$TestWarning, [switch]$TestFull, [switch]$Learn)
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 Add-Type -Path (Join-Path $PSScriptRoot 'AtkHid.cs') -ReferencedAssemblies System.Windows.Forms
 
-# --- Sabit ayarlar (kullanici ayarlari icin: ayarlar.bat) --------------------
+# --- Sabit ayarlar (kullanici ayarlari icin: kontrol merkezi) ----------------
 $DisplaySeconds = 6              # sarj animasyonunun ekranda kalma suresi
 $CooldownSec    = 8              # bu sure icinde tekrar takilirsa animasyon yeniden gosterilmez
 $LowLevel       = 20             # animasyonda bu yuzde ve alti: sivi turuncu-kirmizi
@@ -31,8 +31,14 @@ $XamlPath     = Join-Path $PSScriptRoot 'animasyon.xaml'
 $ToastPath    = Join-Path $PSScriptRoot 'bildirim.xaml'
 $DevicePath   = Join-Path $PSScriptRoot 'cihazlar.csv'
 $TextsPath    = Join-Path $PSScriptRoot 'metinler.json'
-$SettingsPath = if ($env:ATK_SETTINGS) { $env:ATK_SETTINGS } else { Join-Path $PSScriptRoot 'ayarlar.json' }   # testler gecici dosya kullanir
 $LogPath      = Join-Path $PSScriptRoot 'cihaz-log.txt'
+$AppDir       = $PSScriptRoot
+# Testler gercek ayarlara, Baslangic klasorune ve calisan izleyiciye dokunmasin diye ortam degiskenleriyle degistirilebilir
+$SettingsPath = if ($env:ATK_SETTINGS)    { $env:ATK_SETTINGS }    else { Join-Path $PSScriptRoot 'ayarlar.json' }
+$StartupDir   = if ($env:ATK_STARTUP_DIR) { $env:ATK_STARTUP_DIR } else { [Environment]::GetFolderPath('Startup') }
+$MutexName    = if ($env:ATK_MUTEX)       { $env:ATK_MUTEX }       else { 'Global\ATK_Charge_Animation' }
+$ShortcutName = 'ATK Charge Animation.lnk'
+$LegacyShortcutNames = @('ATK Sarj Animasyonu.lnk')   # eski surumlerin kisayolu
 
 # --- Renk temalari: iki vurgu rengi (RRGGBB) --------------------------------
 $Themes = [ordered]@{
@@ -462,6 +468,54 @@ function Update-SettingsIfChanged {
     }
 }
 
+# ---------------------------------------------------------------------------
+# Arka plan izleyicisinin yonetimi (kontrol merkezi kullanir)
+
+# Izleyici calisiyor mu: calisan kopya tek-kopya kilidini (mutex) tutar
+function Test-WatcherRunning {
+    $existing = $null
+    if ([Threading.Mutex]::TryOpenExisting($MutexName, [ref]$existing)) { $existing.Dispose(); return $true }
+    return $false
+}
+
+# Izleyiciyi konsol penceresi olmadan baslatir
+function Start-Watcher {
+    Start-Process -FilePath 'wscript.exe' -ArgumentList ('"{0}"' -f (Join-Path $AppDir 'baslat.vbs'))
+}
+
+# Bu klasordeki izleyiciyi durdurur; kapanmasini en fazla 5 sn bekler
+function Stop-Watcher {
+    $watcherScript = (Join-Path $AppDir 'atk-sarj.ps1').ToLowerInvariant()
+    Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
+        Where-Object { $_.CommandLine -and $_.CommandLine.ToLowerInvariant().Contains($watcherScript) -and $_.ProcessId -ne $PID } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    $deadline = (Get-Date).AddSeconds(5)
+    while ((Test-WatcherRunning) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+}
+
+# Windows acilisinda otomatik baslatma (Baslangic klasorundeki kisayol)
+function Test-Autostart { return (Test-Path -LiteralPath (Join-Path $StartupDir $ShortcutName)) }
+
+function Set-Autostart([bool]$Enabled) {
+    foreach ($old in $LegacyShortcutNames) { Remove-Item -LiteralPath (Join-Path $StartupDir $old) -ErrorAction SilentlyContinue }
+    $lnkPath = Join-Path $StartupDir $ShortcutName
+    if (-not $Enabled) { Remove-Item -LiteralPath $lnkPath -ErrorAction SilentlyContinue; return }
+    # Her seferinde yeniden yazilir: klasor tasindiysa kisayol yeni yeri gosterir
+    $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut($lnkPath)
+    $lnk.TargetPath = Join-Path $env:WINDIR 'System32\wscript.exe'
+    $lnk.Arguments = '"{0}"' -f (Join-Path $AppDir 'baslat.vbs')
+    $lnk.WorkingDirectory = $AppDir
+    $lnk.Description = 'ATK Charge Animation'
+    $lnk.Save()
+}
+
+# Internetten indirilen dosyalardaki Windows engelini (Zone.Identifier) kaldirir
+function Unblock-AppFiles {
+    $root = Split-Path $AppDir -Parent
+    Get-ChildItem -LiteralPath $AppDir -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
+    Get-ChildItem -LiteralPath $root -File -Filter '*.vbs' -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
+}
+
 if ($MyInvocation.InvocationName -eq '.') { return }   # dot-source edilirse sadece fonksiyonlari yukle
 
 $sampleDevice = (@(Get-PresentAtkDevices | Where-Object { -not $_.Receiver }) + $Devices['vid_373b&pid_11e7'])[0]
@@ -470,7 +524,7 @@ if ($TestWarning) { Show-Toast 'low' 20 $sampleDevice.Name; return }
 if ($TestFull)    { Show-Toast 'full' 100 $sampleDevice.Name; return }
 
 # Tek kopya calissin
-$mutex = New-Object Threading.Mutex($false, 'Global\ATK_X1_Sarj_Animasyonu')
+$mutex = New-Object Threading.Mutex($false, $MutexName)
 if (-not $Learn) {
     try { $owned = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $owned = $true }   # onceki kopya zorla kapatildiysa
     if (-not $owned) { return }

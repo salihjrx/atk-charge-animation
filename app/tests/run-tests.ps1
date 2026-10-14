@@ -21,7 +21,11 @@ function Section([string]$Name) { Write-Host "`n== $Name" -ForegroundColor Cyan 
 
 # Ana script'i yalnizca fonksiyon/tip olarak yukle (izleme dongusu calismaz).
 # Gercek ayarlar ve log dosyasi kirletilmez: gecici dosyalar kullanilir.
-$env:ATK_SETTINGS = Join-Path $env:TEMP "atk-sarj-test-$PID.json"
+$env:ATK_SETTINGS    = Join-Path $env:TEMP "atk-sarj-test-$PID.json"
+$env:ATK_STARTUP_DIR = Join-Path $env:TEMP "atk-sarj-test-startup-$PID"   # gercek Baslangic klasoru yerine
+$env:ATK_MUTEX       = "Global\ATK_Charge_Animation_Test_$PID"           # calisan gercek izleyiciden bagimsiz
+$env:ATK_TEST        = '1'                                               # kontrol merkezi sisteme dokunmasin
+New-Item -ItemType Directory -Force $env:ATK_STARTUP_DIR | Out-Null
 . (Join-Path $Root 'atk-sarj.ps1')
 $LogPath = Join-Path $env:TEMP "atk-sarj-test-$PID.log"
 Set-AppSettings @{}   # varsayilan ayarlar (kullanicinin temasi / dili testleri etkilemesin)
@@ -103,12 +107,18 @@ Test 'metinler.json gecerli UTF-8 JSON, Turkce karakterler dogru' {
     AssertEq $Texts.tr.charging ([string][char]0x15E + 'arj oluyor') 'tr metin'
     AssertEq $Texts.tr.theme_gold ('Alt' + [char]0x131 + 'n') 'tr tema adi'
 }
-Test '.bat ve .vbs dosyalari CRLF satir sonu kullaniyor' {
-    foreach ($f in Get-ChildItem $Root -Include *.bat, *.vbs -Recurse) {
+Test '.vbs dosyalari CRLF satir sonu kullaniyor (ana klasordeki baslatici dahil)' {
+    $files = @(Get-ChildItem $Root -Include *.bat, *.vbs -Recurse) + @(Get-ChildItem (Split-Path $Root -Parent) -Filter *.vbs)
+    Assert ($files.Count -ge 2) "vbs dosyasi bulunamadi"
+    foreach ($f in $files) {
         $txt = [IO.File]::ReadAllText($f.FullName)
         $lf = ([regex]::Matches($txt, "(?<!`r)`n")).Count
         AssertEq $lf 0 "$($f.Name) yalniz-LF satir"
     }
+}
+Test 'Ana klasorde yalnizca baslatici, README, LICENSE ve app klasoru var' {
+    $top = @(Get-ChildItem (Split-Path $Root -Parent) -Force | Where-Object { $_.Name -notin '.git', '.gitignore', '.gitattributes' } | ForEach-Object Name | Sort-Object)
+    AssertEq ($top -join ', ') 'app, ATK Charge Animation.vbs, LICENSE, README.md' 'ana klasor icerigi'
 }
 Test 'Animasyon XAML: yer tutucular doluyor, adlar mevcut, odak calmaz, en ustte' {
     $text = Expand-Template ([IO.File]::ReadAllText($XamlPath, [Text.Encoding]::UTF8)) @{ A1 = $Theme.A1; A2 = $Theme.A2; A1L = $Theme.A1L }
@@ -608,9 +618,10 @@ else {
     }
 
     # Ayarlar penceresi: gercek pencere acilir, tiklamalar programdan yapilir (gecici ayar dosyasiyla)
-    Test 'Ayarlar penceresi: 9 tema, secim/secenek/dil/ozel renk kaydedilir, gecersiz renk reddedilir' {
+    Test 'Kontrol merkezi: durum karti, otomatik baslatma, 9 tema, secim/secenek/dil/ozel renk kaydedilir' {
         Remove-Item $SettingsPath -ErrorAction SilentlyContinue
-        $drive = @{ Step = 0; Log = @{} }
+        Remove-Item (Join-Path $StartupDir '*') -ErrorAction SilentlyContinue
+        $drive = @{ Step = 0; Log = @{}; Waits = 0; Mutex = $null }
         $readSaved = { [IO.File]::ReadAllText($SettingsPath) | ConvertFrom-Json }
         $driveTimer = New-Object Windows.Threading.DispatcherTimer
         $driveTimer.Interval = [TimeSpan]::FromMilliseconds(200)
@@ -623,8 +634,19 @@ else {
                 try {
                     switch ($drive.Step) {
                         0 { $drive.Log.Swatches = $panel.Children.Count
+                            $drive.Log.StatusStopped = $sw.FindName('StatusText').Text
+                            $drive.Log.ButtonStopped = $sw.FindName('ServiceButton').Content
+                            $drive.Log.AutostartInitial = [bool]$sw.FindName('AutostartBox').IsChecked
+                            $drive.Log.HasIcon = $null -ne $sw.Icon
+                            $drive.Mutex = New-Object Threading.Mutex($true, $MutexName)   # izleyici calisiyormus gibi
+                            $ab = $sw.FindName('AutostartBox'); $ab.IsChecked = $true; & $click $ab
                             & $click ($panel.Children | Where-Object { $_.Tag -eq 'ocean' }) }
-                        1 { $drive.Log.Theme = (& $readSaved).theme
+                        1 { # durum karti zamanlayiciyla (1 sn) yenilenir: "calisiyor" gorunene kadar bekle
+                            if ($sw.FindName('StatusText').Text -ne $Txt.statusRunning -and $drive.Waits++ -lt 20) { return }
+                            $drive.Log.StatusRunning = $sw.FindName('StatusText').Text
+                            $drive.Log.ButtonRunning = $sw.FindName('ServiceButton').Content
+                            $drive.Log.AutostartFile = Test-Path (Join-Path $StartupDir $ShortcutName)
+                            $drive.Log.Theme = (& $readSaved).theme
                             $cb = $sw.FindName('FullNotifyBox'); $cb.IsChecked = $false; & $click $cb }
                         2 { $drive.Log.FullNotify = (& $readSaved).fullNotify
                             $sw.FindName('LangEn').IsChecked = $true }
@@ -644,8 +666,18 @@ else {
         })
         $driveTimer.Start()
         try { . (Join-Path $Root 'ayarlar.ps1') }
-        finally { $driveTimer.Stop(); Remove-Item $SettingsPath -ErrorAction SilentlyContinue; Set-AppSettings @{}; $script:ClickToClose = $false }
+        finally {
+            $driveTimer.Stop()
+            if ($drive.Mutex) { $drive.Mutex.ReleaseMutex(); $drive.Mutex.Dispose() }
+            Remove-Item $SettingsPath -ErrorAction SilentlyContinue; Remove-Item (Join-Path $StartupDir '*') -ErrorAction SilentlyContinue
+            Set-AppSettings @{}; $script:ClickToClose = $false
+        }
         Assert (-not $drive.Log.Error) $drive.Log.Error
+        AssertEq $drive.Log.StatusStopped $Txt.statusStopped 'durum: calismiyor'; AssertEq $drive.Log.ButtonStopped $Txt.btnStart 'dugme: baslat'
+        AssertEq $drive.Log.StatusRunning $Txt.statusRunning 'durum: calisiyor'; AssertEq $drive.Log.ButtonRunning $Txt.btnStop 'dugme: durdur'
+        AssertEq $drive.Log.AutostartInitial $false 'otomatik baslatma baslangicta kapali (bos test klasoru)'
+        AssertEq $drive.Log.AutostartFile $true 'otomatik baslatma kisayolu olusmali'
+        AssertEq $drive.Log.HasIcon $true 'pencere simgesi'
         AssertEq $drive.Log.Swatches 9 'tema sayisi'
         AssertEq $drive.Log.Theme 'ocean' 'tema kaydi'
         AssertEq $drive.Log.FullNotify $false 'secenek kaydi'
@@ -720,10 +752,43 @@ else {
 }
 
 # =====================================================================
+Section 'Kontrol merkezi islevleri / Control center functions'
+
+Test 'Izleyici durumu tek-kopya kilidinden okunur' {
+    AssertEq (Test-WatcherRunning) $false 'kilit yokken'
+    $held = New-Object Threading.Mutex($true, $MutexName)
+    try { AssertEq (Test-WatcherRunning) $true 'kilit varken' }
+    finally { $held.ReleaseMutex(); $held.Dispose() }
+    AssertEq (Test-WatcherRunning) $false 'kilit birakilinca'
+}
+Test 'Otomatik baslatma: kisayol olusur, app\baslat.vbs''i gosterir, eski adli kisayol temizlenir, kapatilinca silinir' {
+    $legacy = Join-Path $StartupDir $LegacyShortcutNames[0]
+    Set-Content -Path $legacy -Value 'eski'
+    Set-Autostart $true
+    AssertEq (Test-Autostart) $true 'acik'
+    Assert (-not (Test-Path $legacy)) 'eski kisayol silinmeli'
+    $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $StartupDir $ShortcutName))
+    Assert ($lnk.TargetPath.ToLowerInvariant().EndsWith('wscript.exe')) "hedef: $($lnk.TargetPath)"
+    Assert ($lnk.Arguments.Contains((Join-Path $Root 'baslat.vbs'))) "arguman: $($lnk.Arguments)"
+    Set-Autostart $false
+    AssertEq (Test-Autostart) $false 'kapali'
+}
+Test 'Indirilen dosya engeli (Zone.Identifier) kaldirilir' {
+    $probe = Join-Path $Root "tests\unblock-probe-$PID.tmp"
+    try {
+        Set-Content -Path $probe -Value 'x'
+        Set-Content -Path $probe -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3"
+        Assert ($null -ne (Get-Item $probe -Stream Zone.Identifier -ErrorAction SilentlyContinue)) 'engel eklenemedi'
+        Unblock-AppFiles
+        Assert ($null -eq (Get-Item $probe -Stream Zone.Identifier -ErrorAction SilentlyContinue)) 'engel kaldirilmali'
+    } finally { Remove-Item $probe -ErrorAction SilentlyContinue }
+}
+
+# =====================================================================
 Section 'Program / Process'
 
 Test 'Ikinci kopya acilmaz (tek kopya kilidi)' {
-    $mutex = New-Object Threading.Mutex($false, 'Global\ATK_X1_Sarj_Animasyonu')
+    $mutex = New-Object Threading.Mutex($false, $MutexName)
     $ownedHere = $mutex.WaitOne(0)   # calisan izleyici yoksa kilidi test icin biz tutariz
     try {
         $p = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$(Join-Path $Root 'atk-sarj.ps1')`"" -WindowStyle Hidden -PassThru
@@ -732,13 +797,16 @@ Test 'Ikinci kopya acilmaz (tek kopya kilidi)' {
         Assert $exited 'ikinci kopya kapanmadi'
     } finally { if ($ownedHere) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
 }
-Test 'Baslatici dogru dosyayi gizli calistiriyor' {
+Test 'Baslaticilar: ana klasordeki tek dosya kontrol merkezini, app\baslat.vbs izleyiciyi gizli acar' {
     $vbs = Get-Content (Join-Path $Root 'baslat.vbs') -Raw
-    Assert ($vbs.Contains('atk-sarj.ps1')) 'baslat.vbs atk-sarj.ps1 cagirmiyor'
+    Assert ($vbs.Contains('atk-sarj.ps1') -and $vbs.Contains('ayarlar.ps1')) 'baslat.vbs iki modu da desteklemeli'
     Assert ($vbs.Contains('WindowStyle Hidden')) 'gizli calismiyor'
+    $main = Get-Content (Join-Path (Split-Path $Root -Parent) 'ATK Charge Animation.vbs') -Raw
+    Assert ($main.Contains('\app\baslat.vbs') -and $main.Contains('ayarlar')) 'ana baslatici kontrol merkezini acmiyor'
 }
 
 Remove-Item $LogPath -ErrorAction SilentlyContinue
+Remove-Item $env:ATK_STARTUP_DIR -Recurse -ErrorAction SilentlyContinue
 
 # =====================================================================
 Write-Host ''

@@ -1,11 +1,25 @@
 <#
-  Ayarlar penceresi: renk temasi, bildirimler, dil.
-  Degisiklikler hemen ayarlar.json'a kaydedilir; arka planda calisan izleyici 1 sn icinde uygular.
+  Kontrol merkezi (programin tek giris noktasi: ..\ATK Charge Animation.vbs).
+  Arka plan izleyicisini baslatir / durdurur, Windows acilisinda baslatmayi yonetir;
+  renk temasi, bildirimler, dil. Ayarlar hemen ayarlar.json'a kaydedilir ve izleyici 1 sn icinde uygular.
 #>
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'atk-sarj.ps1')   # fonksiyonlar, temalar, metinler, kayitli ayarlar
 
 $SettingsXamlPath = Join-Path $PSScriptRoot 'ayarlar.xaml'
+$TestMode = [bool]$env:ATK_TEST   # testlerde gercek sisteme (Baslangic, calisan izleyici) dokunulmaz
+
+# Ilk acilista: otomatik baslatmayi ac ve izleyiciyi baslat. Sonraki acilislarda kullanicinin secimine dokunulmaz.
+$firstRun = -not (Test-Path $SettingsPath)
+if (-not $TestMode) {
+    Unblock-AppFiles   # ZIP'ten cikan dosyalardaki "internetten indirildi" engeli
+    if ($firstRun) {
+        Save-Settings
+        Set-Autostart $true
+        if (-not (Test-WatcherRunning)) { Start-Watcher }
+    }
+    elseif (Test-Autostart) { Set-Autostart $true }   # klasor tasindiysa kisayol yeni yeri gostersin
+}
 
 # {{t:anahtar}} -> metin (XML icin kacisli), {{A1}} / {{A2}} -> tema renkleri
 $settingsXaml = [IO.File]::ReadAllText($SettingsXamlPath, [Text.Encoding]::UTF8)
@@ -118,10 +132,52 @@ function Get-SampleMouse {
 (Get-Ui 'TryLow').Add_Click({ Show-Toast 'low' 18 (Get-SampleMouse).Name })
 (Get-Ui 'TryFull').Add_Click({ Show-Toast 'full' 100 (Get-SampleMouse).Name })
 
+# --- Durum: arka plan izleyicisi ----------------------------------------------------
+function Update-StatusView {
+    $running = Test-WatcherRunning
+    (Get-Ui 'StatusDot').Fill    = [Windows.Media.Brush](New-Brush $(if ($running) { '39D98A' } else { '5A6573' }))
+    (Get-Ui 'StatusText').Text   = if ($running) { $Txt.statusRunning } else { $Txt.statusStopped }
+    (Get-Ui 'StatusSub').Text    = if ($running) { $Txt.statusRunningSub } else { $Txt.statusStoppedSub }
+    (Get-Ui 'ServiceButton').Content = if ($running) { $Txt.btnStop } else { $Txt.btnStart }
+    (Get-Ui 'ServiceButton').Tag = $running
+}
+(Get-Ui 'ServiceButton').Add_Click({
+    if ($this.Tag) { Stop-Watcher } else { Start-Watcher }
+    Update-StatusView   # baslarken kilidin alinmasi bir an surebilir; zamanlayici birazdan yeniler
+})
+$statusTimer = New-Object Windows.Threading.DispatcherTimer
+$statusTimer.Interval = [TimeSpan]::FromSeconds(1)
+$statusTimer.Add_Tick({ Update-StatusView })
+
+# --- Genel: Windows acilisinda baslat ------------------------------------------------
+$autoBox = Get-Ui 'AutostartBox'
+$autoBox.IsChecked = Test-Autostart
+$autoBox.Add_Click({ Set-Autostart ([bool]$this.IsChecked); $this.IsChecked = Test-Autostart })
+
+# --- Kayit dosyasi ve kaldirma -------------------------------------------------------
+(Get-Ui 'OpenLogButton').Add_Click({
+    if (Test-Path $LogPath) { Start-Process notepad.exe -ArgumentList ('"{0}"' -f $LogPath) }
+    else { [void][Windows.MessageBox]::Show($win, $Txt.noLog, $Txt.settingsTitle) }
+})
+(Get-Ui 'UninstallButton').Add_Click({
+    $answer = [Windows.MessageBox]::Show($win, $Txt.uninstallConfirm, $Txt.settingsTitle, 'YesNo', 'Question')
+    if ($answer -ne 'Yes') { return }
+    Set-Autostart $false
+    Stop-Watcher
+    [void][Windows.MessageBox]::Show($win, $Txt.uninstallDone, $Txt.settingsTitle, 'OK', 'Information')
+    Start-Process explorer.exe -ArgumentList ('"{0}"' -f (Split-Path $AppDir -Parent))   # silinecek klasoru goster
+    $win.Close()
+})
+
 # --- Pencere ------------------------------------------------------------------
+$iconPath = Join-Path $AppDir 'icon.png'
+if (Test-Path $iconPath) { $win.Icon = [Windows.Media.Imaging.BitmapFrame]::Create([Uri]$iconPath) }
 (Get-Ui 'TitleBar').Add_MouseLeftButtonDown({ $win.DragMove() })
 (Get-Ui 'CloseButton').Add_Click({ $win.Close() })
 $win.Add_KeyDown({ if ($_.Key -eq 'Escape') { $win.Close() } })
+$win.Add_Closed({ $statusTimer.Stop() })
 
 Update-SettingsView
+Update-StatusView
+$statusTimer.Start()
 [void]$win.ShowDialog()
