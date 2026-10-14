@@ -44,10 +44,6 @@ ATK mouse'unuzu USB-C kabloyla şarja taktığınızda ekranda şık bir şarj a
 
 Kaldırmak için kontrol merkezinde **Programı kaldır**'a basın, ardından klasörü silin.
 
-### Güvenlik
-
-[VirusTotal taraması](https://www.virustotal.com/gui/file/0617a9fc74ca0c62c21d6060f5c1cd8acfa3142a795da43d01c0ac539adf8a73) (14.10.2026): **70 antivirüsten 63'ü temiz**. Microsoft Defender, Kaspersky, ESET, Bitdefender, Avast, Norton, Sophos, Trend Micro ve CrowdStrike dahil. İşaretleyen 7 motorun hepsi, dosyanın görünüşünden tahmin yürüten yapay zekâ tabanlı motorlar (`anomalous/machinelearning`). İmzasız ve PowerShell çalıştıran başlatıcılarda sık görülen bir yanlış alarm bu. Program hiçbir şey indirmez ve internete bağlanmaz. Mouse'a yalnızca pil seviyesini soran, salt okunur bir komut gönderir. Tüm kod bu repoda açıktır. Ayrıntılar ve 70 sonucun tamamı: [VirusTotal raporu](app/docs/virustotal.md).
-
 ### Desteklenen mouse'lar
 
 ATK HUB'ın tanıdığı **251 ATK / VXE / MAD cihaz kimliği** (`app/cihazlar.csv`) tanınır:
@@ -94,10 +90,6 @@ On first launch it starts running in the background, sets itself to start with W
 > The application is not code-signed, so Windows may show "Windows protected your PC" the first time: click **More info → Run anyway**. It won't ask again.
 
 To uninstall, click **Uninstall** in the control center, then delete the folder.
-
-### Security
-
-[VirusTotal scan](https://www.virustotal.com/gui/file/0617a9fc74ca0c62c21d6060f5c1cd8acfa3142a795da43d01c0ac539adf8a73) (2026-10-14): **63 of 70 engines clean**, including Microsoft Defender, Kaspersky, ESET, Bitdefender, Avast, Norton, Sophos, Trend Micro and CrowdStrike. All 7 engines that flagged it are AI-based engines that judge a file by its shape (`anomalous/machinelearning`). This is a common false positive for unsigned launchers that run PowerShell. The program downloads nothing and never connects to the internet. It only sends the mouse a read-only battery query. All code is in this repository. Details and all 70 results: [VirusTotal report](app/docs/virustotal.md).
 
 ### Supported mice
 
